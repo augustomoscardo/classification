@@ -1,24 +1,98 @@
-import { createPartFromUri, createUserContent, GoogleGenAI } from "@google/genai"
+import { GoogleGenAI, Type } from "@google/genai"
 import fs from "node:fs"
+import dotenv from "dotenv"
+
+dotenv.config({
+  quiet: true
+})
 
 const genai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
 
 const embeddings = JSON.parse(fs.readFileSync("../nearest_neighbors/embeddings.json"))
-const testEmbeddings = embeddings.filter(e => e.split === "test").map(e => "../nearest_neighbors" + e.path.slice(1))
-
-const image = await genai.files.upload({
-  file: testEmbeddings[0],
-  config: {
-    mimeType: "image/jpeg"
+const testInstances = embeddings.filter(e => e.split === "test").map(e => {
+  return {
+    trueClass: e.class,
+    path: "../nearest_neighbors" + e.path.slice(1)
   }
 })
 
-const response = await genai.models.generateContent({
-  model: "gemini-2.0-flash",
-  contents: createUserContent([
-    createPartFromUri(image.uri, image.mimeType),
-    "Faça uma descrição da imagem acima"
-  ])
-})
+const prompt = `
+  Identifique se a imagem contém gatos ou cachorros.
+  Retorne uma das seguintes categorias de acordo com o conteúdo da imagem:
+  'cat' caso a imagem contenha um ou mais gatos ou
+  'dog' caso a imagem contenha um ou mais cachorros
+  também retorne a cor do animal identificado.
+`
 
-console.log(response.text);
+const outputConfig = {
+  responseMimeType: "application/json",
+  responseSchema: {
+    type: Type.ARRAY,
+    items: {
+      type: Type.OBJECT,
+      properties: {
+        category: {
+          type: Type.STRING,
+          enum: ["dog", "cat"]
+        },
+        // color: {
+        //   type: Type.STRING,
+        // }
+      }
+    }
+  }
+}
+
+function readImg(path) {
+  return fs.readFileSync(path, { encoding: "base64" })
+}
+
+function toInlineData(imgBase64) {
+  return {
+    inlineData: {
+      mimeType: "image/jpeg",
+      data: imgBase64
+    }
+  }
+}
+
+async function geminiRequest(contents) {
+  const response = await genai.models.generateContent({
+    model: "gemini-2.0-flash",
+    contents,
+    config: outputConfig
+  })
+
+  return response
+}
+
+async function llmClassifier(path) {
+  const imgBase64 = readImg(path)
+  const imgInlineData = toInlineData(imgBase64)   // { inlineData : { mimeType, data } }
+  const contents = [imgInlineData, { text: prompt }]
+
+  const response = await geminiRequest(contents)
+
+  return JSON.parse(response.text)[0].category
+}
+
+function calculateAccuracy(results) {
+  let nCorrect = 0
+
+  for (const result of results) {
+    if (result.predictedClass === result.trueClass) {
+      nCorrect++
+    }
+  }
+
+  return nCorrect / results.length
+}
+
+const requests = testInstances.slice(0, 10).map(i => llmClassifier(i.path))
+await Promise.all(requests)
+
+for (let i = 0; i < testInstances.slice(0, 10).length; i++) {
+  testInstances[i].predictedClass = await requests[i]
+}
+
+console.log(calculateAccuracy(testInstances.slice(0, 10)));
