@@ -2,8 +2,6 @@ import { cos_sim } from "@huggingface/transformers";
 import fs from "fs"
 
 const embeddings = JSON.parse(fs.readFileSync("./embeddings.json"))
-
-
 const trainEmbeddings = embeddings.filter(e => e.split === "train")
 const testEmbeddings = embeddings.filter(e => e.split === "test")
 
