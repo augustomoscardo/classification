@@ -34,10 +34,7 @@ const outputConfig = {
         category: {
           type: Type.STRING,
           enum: ["dog", "cat"]
-        },
-        // color: {
-        //   type: Type.STRING,
-        // }
+        }
       }
     }
   }
