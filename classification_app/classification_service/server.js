@@ -1,7 +1,7 @@
 import { init as knnInit, classify as knnclassify } from "./knn/api.js";
 import { classify as llmClassify } from "./llm/api.js";
-
 import express from "express"
+import cors from "cors"
 
 const app = express()
 const port = 3333
@@ -9,26 +9,32 @@ const port = 3333
 await knnInit()
 
 app.use(express.json())
+app.use(cors({
+  origin: "http://localhost:5173"
+}))
 
 app.get("/", (req, res) => {
   res.send("Hello World")
 })
 
 app.post("/classify", async (req, res) => {
-  const method = req.body.method
-  const imgPath = req.body.imgPath
+  const { method, imgPath, k } = req.body
 
   let result = null
 
   if (method === "llm") {
-    result = await llmClassify(imgPath)
+    const kVariable = k ? k : 5
+
+    result = await llmClassify(imgPath, kVariable)
   } else if (method === "knn") {
-    result = await knnclassify(imgPath, 5)
+    const kVariable = k ? k : 5
+
+    result = await knnclassify(imgPath, kVariable)
   } else {
-    res.send({ error: "No method found." })
+    res.status(400).send({ error: "No method found." })
   }
 
-  res.send({ category: result })
+  res.status(200).send({ category: result })
 })
 
 app.listen(port, () => {
